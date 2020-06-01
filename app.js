@@ -1,6 +1,6 @@
 const WebSocket = require('ws')
 
-const wss = new WebSocket.Server({ port: 8989})
+const wss = new WebSocket.Server({ port: process.env.PORT||8000})
 const DEFAULT_ROOM = '8e1286c5-407c-4ffd-bf6c-7bc621fb2f2e';
 const users = []
 const onlineUsers = []
