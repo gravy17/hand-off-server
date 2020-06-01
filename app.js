@@ -21,7 +21,7 @@ const broadcast = (data, ws) => {
 	})
 }
 
-console.log('server running...');
+console.log('server running: '+ wss.url);
 wss.on('connection', (ws) => {
 	console.log('new client...');
 	ws.on('message', (message) => {
