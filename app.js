@@ -7,43 +7,48 @@ const PORT = process.env.PORT||8989;
 const app = express();
 const router = express.Router();
 router.get('/', (req, res) => {
-	res.send('server is live =)');
+	res.send('HandOff server is live =)');
 })
+app.use(router);
+app.use(cors());
 
 var server = http.createServer(app);
 
 var p2p = require('socket.io-p2p-server').Server;
 var io = socketio(server);
+io.use(p2p);
 
 const DEFAULT_ROOM = '8e1286c5-407c-4ffd-bf6c-7bc621fb2f2e';
-
-app.use(router);
-app.use(cors());
+let users = [];
 
 server.listen(PORT, ()=>{
 	console.log("Server: "+PORT+"\n\n"+JSON.stringify(server));
 })
 
-io.use(p2p);
-
 io.on('connection', (ws) => {
-	console.log('new client...');
+	console.log('new client...\n');
 	let clientId
 	let name
 	ws.on('hello', (data) => {
 		clientId = data.id;
 		name = data.name;
-		console.log("hello from"+name);
-		ws.broadcast.emit('peer-msg', {type: 'REGISTER_USR', id: clientId, name: data.name})
+		users.push({id: clientId, name: name});
+		console.log("hello from "+name);
+		ws.broadcast.emit('peer-msg', {type: 'REGISTER_USR', id: clientId, name: name})
+		users.forEach(user => {
+			ws.emit('peer-msg', {type: 'REGISTER_USR', id: user.id, name: user.name})
+		})
 	})
 
 	ws.on('peer-msg', (data) => {
-		console.log(JSON.stringify(data));
+		console.log(name+"\'s socket just sent an action through the server");
 		ws.broadcast.emit('peer-msg', data)
 	})
 
 	ws.on('disconnect', () => {
-		console.log("bye from"+name)
+		console.log("bye from "+name);
+		users = users.filter(usr => usr.id !== clientId);
+		console.log("Remaining users: \n"+users);
 		ws.broadcast.emit('peer-msg', {type: 'REMOVE_USR', id: clientId})
 		ws.broadcast.emit('peer-msg', {type: 'RM_FROM_ROOMS', name: name})
 	})
