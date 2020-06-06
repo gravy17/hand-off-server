@@ -29,6 +29,8 @@ io.on('connection', (ws) => {
 	console.log('new client...\n');
 	let clientId
 	let name
+	let broadcaster
+
 	ws.on('hello', (data) => {
 		clientId = data.id;
 		name = data.name;
@@ -40,6 +42,28 @@ io.on('connection', (ws) => {
 		})
 	})
 
+	ws.on("offer", (id, message) => {
+		socket.to(id).emit("offer", ws.id, message);
+	});
+
+	ws.on("answer", (id, message) => {
+		socket.to(id).emit("answer", ws.id, message);
+	})
+
+	ws.on("candidate", (id, message) => {
+		socket.to(id).emit("candidate", ws.id, message);
+	})
+
+	ws.on("broadcaster", () => {
+		broadcaster = ws.id;
+		ws.broadcast.emit("broadcaster");
+	})
+
+	ws.on("watcher", () => {
+		broadcaster = ws.id;
+		ws.to(broadcaster).emit("watcher", ws.id);
+	})
+
 	ws.on('peer-msg', (data) => {
 		console.log(name+"\'s socket just sent an action through the server");
 		ws.broadcast.emit('peer-msg', data)
@@ -49,6 +73,7 @@ io.on('connection', (ws) => {
 		console.log("bye from "+name);
 		users = users.filter(usr => usr.id !== clientId);
 		console.log("Remaining users: \n"+users);
+		ws.to(broadcaster).emit("hangup", ws.id);
 		ws.broadcast.emit('peer-msg', {type: 'REMOVE_USR', id: clientId})
 		ws.broadcast.emit('peer-msg', {type: 'RM_FROM_ROOMS', name: name})
 	})
