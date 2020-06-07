@@ -31,7 +31,7 @@ io.on('connection', (ws) => {
 	let clientId
 	let name
 	if (!peerlist[ws.id]){
-		peerlist[ws.id] = ws.id;
+		peerlist[ws.id] = {id: ws.id, name: name};
 	}
 	ws.emit("yourID", ws.id);
 	io.sockets.emit("allUsers", peerlist);
