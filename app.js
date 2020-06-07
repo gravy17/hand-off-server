@@ -33,14 +33,16 @@ io.on('connection', (ws) => {
 	if (!peerlist[ws.id]){
 		peerlist[ws.id] = ws.id;
 	}
-        ws.emit("yourID", ws.id);
+  ws.emit("yourID", ws.id);
 	io.sockets.emit("allUsers", peerlist);
 
 	ws.on("callUser", (data) => {
+		console.log("call from " +data.from +" to" +data.userToCall);
 		io.to(data.userToCall).emit('hey', {signal: data.signalData, from: data.from});
 	})
 
 	ws.on("acceptCall", (data) => {
+		console.log("call accept by "+data.to)
 		io.to(data.to).emit('callAccepted', data.signal);
 	})
 
