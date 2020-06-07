@@ -31,8 +31,10 @@ io.on('connection', (ws) => {
 	let clientId
 	let name
 	if (!peerlist[ws.id]){
-		peerlist[ws.id] = {id: ws.id};
+		peerlist[ws.id] = ws.id;
 	}
+        ws.emit("yourID", ws.id);
+	io.sockets.emit("allUsers", peerlist);
 
 	ws.on("callUser", (data) => {
 		io.to(data.userToCall).emit('hey', {signal: data.signalData, from: data.from});
@@ -45,9 +47,7 @@ io.on('connection', (ws) => {
 	ws.on('hello', (data) => {
 		clientId = data.id;
 		name = data.name;
-peerlist[ws.id].name = data.name;
-ws.emit("yourID", ws.id);
-	io.sockets.emit("allUsers", peerlist);
+
 		users.push({id: clientId, name: name});
 		console.log("hello from "+name);
 		ws.broadcast.emit('peer-msg', {type: 'REGISTER_USR', id: clientId, name: name})
