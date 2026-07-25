@@ -64,12 +64,18 @@ function createPresenceStore() {
     return null;
   }
 
+  function hasSocket(roomId, socketId) {
+    const room = rooms.get(roomId);
+    return Boolean(room && room.has(socketId));
+  }
+
   return {
     addMember,
     removeMember,
     list,
     size,
     findByUserId,
+    hasSocket,
   };
 }
 

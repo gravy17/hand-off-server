@@ -8,6 +8,17 @@ const ALLOWED_CLIENT_EVENTS = new Set([
   'signal:ice',
 ]);
 
+const LEGACY_CLIENT_EVENTS = new Set([
+  'hello',
+  'peer-msg',
+  'callUser',
+  'acceptCall',
+  'hey',
+  'callAccepted',
+  'yourID',
+  'allUsers',
+]);
+
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -80,6 +91,7 @@ function parseIce(payload, maxPayloadBytes) {
 
 module.exports = {
   ALLOWED_CLIENT_EVENTS,
+  LEGACY_CLIENT_EVENTS,
   parseTargetedSignal,
   parseIce,
 };

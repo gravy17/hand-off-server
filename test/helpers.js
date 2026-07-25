@@ -18,8 +18,8 @@ async function listen(server) {
   return `http://127.0.0.1:${address.port}`;
 }
 
-async function startTestServer(overrides = {}) {
-  const config = {
+function baseConfig(overrides = {}) {
+  return {
     nodeEnv: 'test',
     isProduction: false,
     port: 0,
@@ -30,7 +30,23 @@ async function startTestServer(overrides = {}) {
     maxPayloadBytes: overrides.maxPayloadBytes || 16384,
     tokenTtlSeconds: 900,
     rateLimitEventsPerSec: overrides.rateLimitEventsPerSec || 1000,
+    rateLimitInvitesPerMin: overrides.rateLimitInvitesPerMin || 1000,
+    maxConnectionsPerIp: overrides.maxConnectionsPerIp || 100,
+    connectionRatePerIpPerMin: overrides.connectionRatePerIpPerMin || 1000,
+    turnEnabled: Boolean(overrides.turnSharedSecret && (overrides.turnUrls || ['turn:example:3478']).length),
+    turnSharedSecret: overrides.turnSharedSecret || '',
+    turnUrls: overrides.turnUrls || [],
+    turnTtlSeconds: overrides.turnTtlSeconds || 300,
+    ...overrides,
   };
+}
+
+async function startTestServer(overrides = {}) {
+  const config = baseConfig(overrides);
+  if (config.turnSharedSecret && config.turnUrls.length === 0) {
+    config.turnUrls = ['turn:example:3478'];
+  }
+  config.turnEnabled = Boolean(config.turnSharedSecret && config.turnUrls.length > 0);
 
   let ready = false;
   const app = createHttpApp({
@@ -39,7 +55,7 @@ async function startTestServer(overrides = {}) {
     logger,
   });
   const server = http.createServer(app);
-  const { io, presence } = createSocketServer(server, config, logger);
+  const { io, presence, calls } = createSocketServer(server, config, logger);
   const url = await listen(server);
   ready = true;
 
@@ -59,7 +75,6 @@ async function startTestServer(overrides = {}) {
     await new Promise((resolve) => {
       io.close(() => resolve());
     });
-    // Socket.IO may already have closed the HTTP server.
     if (server.listening) {
       await new Promise((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));
@@ -67,7 +82,7 @@ async function startTestServer(overrides = {}) {
     }
   }
 
-  return { url, config, io, presence, tokenFor, close };
+  return { url, config, io, presence, calls, tokenFor, close };
 }
 
 module.exports = { startTestServer };

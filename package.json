@@ -6,12 +6,13 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node --test test/auth.test.js test/rooms.test.js test/signaling.test.js",
+    "test": "node --test test/auth.test.js test/rooms.test.js test/signaling.test.js test/turn.test.js test/calls.test.js",
     "mint-token": "node scripts/mint-token.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.2",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
     "socket.io": "^4.8.1"
   },

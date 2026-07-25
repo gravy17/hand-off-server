@@ -1,17 +1,21 @@
 # hand-off-server
 
-Authenticated, room-scoped **WebRTC signaling** server for the hand-off app.
+Authenticated, room-scoped **WebRTC signaling** server for the hand-off app (v2).
 
-This is **not** a TURN server. It relays signaling (presence + call setup) only. For NAT traversal, run [coturn](https://github.com/coturn/coturn) (or another TURN provider) separately and mint short-lived credentials from your app backend.
+This is **not** a TURN/media server. Signaling lives here; NAT traversal is handled by [coturn](./docs/COTURN.md) (or another TURN provider) via optional ephemeral credential vending.
 
-## What changed (v2)
+> **Breaking change:** v1’s open Socket.IO bus (`hello`, `peer-msg`, `callUser`, …) is gone. See [docs/MIGRATION.md](./docs/MIGRATION.md).
+
+## Features
 
 - JWT auth on the Socket.IO handshake
-- Room isolation from token claims (`roomId`)
-- Server-authoritative presence (no client `REGISTER_USR` bus)
-- Allowlisted call signaling events (`call:*`, `signal:ice`)
-- CORS allowlist, payload size limits, basic event rate limiting
-- Health endpoints and structured logs
+- Room isolation from token `roomId`
+- Server-authoritative presence (session takeover per user)
+- Call state machine: invite → ringing → accept/reject/end (+ disconnect cleanup)
+- Allowlisted events only; legacy events rejected with `LEGACY_EVENT`
+- Helmet, CORS allowlist, payload limits, per-socket/invite/IP abuse controls
+- Optional coturn REST credential endpoint
+- Health endpoints + structured JSON logs
 
 ## Quick start
 
@@ -22,59 +26,40 @@ export ALLOWED_ORIGINS='http://localhost:3000'
 npm start
 ```
 
-Dev defaults (non-production only): if `ROOM_TOKEN_SECRET` is unset, a local development secret is used and CORS may allow any origin.
+```bash
+npm test
+npm run mint-token -- --userId=user-123 --roomId=room-abc --name=Ada
+```
 
 ## Environment
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `PORT` | no | `8989` | HTTP / Socket.IO port |
-| `NODE_ENV` | no | `development` | Set `production` to enforce secrets/origins |
+| `NODE_ENV` | no | `development` | `production` enforces secrets/origins |
 | `ROOM_TOKEN_SECRET` | production | dev secret | HS256 secret for room JWTs |
-| `MINT_SECRET` | no | same as room secret in dev | Protects `POST /v1/rooms/:roomId/token` |
+| `MINT_SECRET` | no | room secret in dev | Protects token mint helper |
 | `ALLOWED_ORIGINS` | production | none | Comma-separated browser origins |
 | `MAX_ROOM_SIZE` | no | `8` | Max sockets per room |
 | `MAX_PAYLOAD_BYTES` | no | `16384` | Max signal/candidate JSON size |
 | `TOKEN_TTL_SECONDS` | no | `900` | Default mint TTL |
-| `RATE_LIMIT_EVENTS_PER_SEC` | no | `20` | Per-socket signaling event budget |
+| `RATE_LIMIT_EVENTS_PER_SEC` | no | `20` | Per-socket signaling budget |
+| `RATE_LIMIT_INVITES_PER_MIN` | no | `10` | Per-user invite budget |
+| `MAX_CONNECTIONS_PER_IP` | no | `20` | Concurrent sockets per IP |
+| `CONNECTION_RATE_PER_IP_PER_MIN` | no | `60` | New connects per IP per minute |
+| `TURN_SHARED_SECRET` | no | unset | coturn static-auth-secret |
+| `TURN_URLS` | with TURN secret | unset | Comma-separated TURN URLs |
+| `TURN_TTL_SECONDS` | no | `300` | Ephemeral TURN credential TTL |
 
-## Auth / tokens
+Copy `.env.example` as a template.
 
-Clients must connect with a short-lived room JWT:
+## Socket API
+
+Connect with:
 
 ```js
-import { io } from 'socket.io-client';
-
-const socket = io(SERVER_URL, {
-  auth: { token },
-});
+io(url, { auth: { token } })
 ```
-
-Token claims:
-
-```json
-{
-  "sub": "user-123",
-  "name": "Ada",
-  "roomId": "room-abc",
-  "role": "member"
-}
-```
-
-Mint via your app backend (preferred), CLI, or the protected helper endpoint:
-
-```bash
-# CLI
-npm run mint-token -- --userId=user-123 --roomId=room-abc --name=Ada
-
-# HTTP helper
-curl -X POST "$SERVER/v1/rooms/room-abc/token" \
-  -H 'content-type: application/json' \
-  -H "x-mint-secret: $MINT_SECRET" \
-  -d '{"userId":"user-123","name":"Ada"}'
-```
-
-## Socket events
 
 ### Server → client
 
@@ -83,7 +68,7 @@ curl -X POST "$SERVER/v1/rooms/room-abc/token" \
 - `call:incoming` `{ fromUserId, fromName, signal }`
 - `call:accepted` `{ fromUserId, signal }`
 - `call:rejected` `{ fromUserId }`
-- `call:ended` `{ fromUserId }`
+- `call:ended` `{ fromUserId, reason? }`
 - `signal:ice` `{ fromUserId, candidate }`
 - `error:client` `{ code, message }`
 
@@ -95,26 +80,31 @@ curl -X POST "$SERVER/v1/rooms/room-abc/token" \
 - `call:end` `{ toUserId }`
 - `signal:ice` `{ toUserId, candidate }`
 
-`fromUserId` is always taken from the verified token, never from the client payload.
+Rules:
 
-## HTTP
+- `fromUserId` is always taken from the verified token
+- One ringing/active call per user
+- Only the callee may `call:accept`
+- ICE is only relayed for an existing ringing/active call
 
-- `GET /` — liveness string
-- `GET /healthz` — process up
-- `GET /readyz` — accepting traffic
-- `POST /v1/rooms/:roomId/token` — mint helper (requires `x-mint-secret`)
+## HTTP API
+
+- `GET /` — service metadata
+- `GET /healthz` — liveness
+- `GET /readyz` — readiness
+- `POST /v1/rooms/:roomId/token` — mint helper (`x-mint-secret`)
+- `POST /v1/turn/credentials` — ephemeral TURN creds (`Authorization: Bearer <room JWT>`)
+
+## Docs
+
+- [Migration (clean break)](./docs/MIGRATION.md)
+- [coturn setup](./docs/COTURN.md)
 
 ## Scripts
 
 ```bash
-npm start          # production entry
-npm run dev        # node --watch
-npm test           # integration tests
-npm run mint-token # mint a JWT locally
+npm start
+npm run dev
+npm test
+npm run mint-token
 ```
-
-## Security notes
-
-- Do not deploy publicly without `ROOM_TOKEN_SECRET` and `ALLOWED_ORIGINS`
-- Keep `MINT_SECRET` private; prefer minting tokens in your main app API
-- Pair this service with TURN credentials from coturn (or equivalent), not open relays

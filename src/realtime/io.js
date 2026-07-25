@@ -2,15 +2,28 @@
 
 const { Server } = require('socket.io');
 const { verifyRoomToken } = require('../security/tokens');
-const { createEventRateLimiter } = require('../security/rateLimit');
+const {
+  createEventRateLimiter,
+  createInviteRateLimiter,
+  createConnectionGuard,
+} = require('../security/rateLimit');
 const { createPresenceStore } = require('./presence');
+const { createCallRegistry } = require('./calls');
 const { attachRoomHandlers } = require('./rooms');
 const { attachSignalingHandlers } = require('./signaling');
 
 function createSocketServer(httpServer, config, logger) {
   const presence = createPresenceStore();
+  const calls = createCallRegistry();
   const rateLimiter = createEventRateLimiter({
     limitPerSec: config.rateLimitEventsPerSec,
+  });
+  const inviteRateLimiter = createInviteRateLimiter({
+    limitPerMin: config.rateLimitInvitesPerMin,
+  });
+  const connectionGuard = createConnectionGuard({
+    maxConnectionsPerIp: config.maxConnectionsPerIp,
+    connectionRatePerIpPerMin: config.connectionRatePerIpPerMin,
   });
 
   const io = new Server(httpServer, {
@@ -40,11 +53,14 @@ function createSocketServer(httpServer, config, logger) {
 
   io.use((socket, next) => {
     try {
+      // Rate-limit and cap checks run before auth so failed handshakes still count.
+      connectionGuard.assertCanConnect(socket);
+
       const token =
         socket.handshake.auth?.token ||
-        socket.handshake.query?.token ||
         extractBearer(socket.handshake.headers?.authorization);
 
+      // Clean break: query-string tokens are no longer accepted.
       const claims = verifyRoomToken(token, config.roomTokenSecret);
       socket.data.userId = claims.userId;
       socket.data.name = claims.name;
@@ -60,8 +76,17 @@ function createSocketServer(httpServer, config, logger) {
 
   io.on('connection', (socket) => {
     try {
-      attachRoomHandlers({ io, socket, presence, config, logger });
-      attachSignalingHandlers({ socket, presence, config, rateLimiter, logger });
+      connectionGuard.track(socket);
+      attachRoomHandlers({ io, socket, presence, calls, config, logger });
+      attachSignalingHandlers({
+        socket,
+        presence,
+        calls,
+        config,
+        rateLimiter,
+        inviteRateLimiter,
+        logger,
+      });
     } catch (err) {
       logger.warn('connection rejected after auth', {
         socketId: socket.id,
@@ -77,7 +102,7 @@ function createSocketServer(httpServer, config, logger) {
     }
   });
 
-  return { io, presence };
+  return { io, presence, calls };
 }
 
 function extractBearer(header) {
