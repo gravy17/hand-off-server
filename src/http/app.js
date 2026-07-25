@@ -7,7 +7,7 @@ const { createHealthRouter } = require('./routes/health');
 const { createRoomsRouter } = require('./routes/rooms');
 const { createTurnRouter } = require('./routes/turn');
 
-function createHttpApp({ config, getReady, logger }) {
+function createHttpApp({ config, getReady, getRedisReady, logger }) {
   const app = express();
 
   app.disable('x-powered-by');
@@ -44,10 +44,11 @@ function createHttpApp({ config, getReady, logger }) {
       service: 'hand-off-signaling',
       version: 2,
       turnEnabled: config.turnEnabled,
+      redisEnabled: Boolean(config.redisUrl),
     });
   });
 
-  app.use(createHealthRouter({ getReady }));
+  app.use(createHealthRouter({ getReady, getRedisReady }));
   app.use(createRoomsRouter({ config, logger }));
   app.use(createTurnRouter({ config, logger }));
 

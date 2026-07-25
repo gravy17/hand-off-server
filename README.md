@@ -15,6 +15,7 @@ This is **not** a TURN/media server. Signaling lives here; NAT traversal is hand
 - Allowlisted events only; legacy events rejected with `LEGACY_EVENT`
 - Helmet, CORS allowlist, payload limits, per-socket/invite/IP abuse controls
 - Optional coturn REST credential endpoint
+- Optional Redis / Render free Key Value for multi-instance (`REDIS_URL`)
 - Health endpoints + structured JSON logs
 
 ## Quick start
@@ -50,8 +51,11 @@ npm run mint-token -- --userId=user-123 --roomId=room-abc --name=Ada
 | `TURN_SHARED_SECRET` | no | unset | coturn static-auth-secret |
 | `TURN_URLS` | with TURN secret | unset | Comma-separated TURN URLs |
 | `TURN_TTL_SECONDS` | no | `300` | Ephemeral TURN credential TTL |
+| `REDIS_URL` | multi-instance | unset | Render Key Value / Redis URL |
 
 Copy `.env.example` as a template.
+
+Multi-instance requires `REDIS_URL` (Socket.IO adapter + shared presence/calls). On Render you can use the **free** Key Value plan — see [docs/RENDER.md](./docs/RENDER.md).
 
 ## Socket API
 
@@ -99,6 +103,7 @@ Rules:
 
 - [Migration (clean break)](./docs/MIGRATION.md)
 - [coturn setup](./docs/COTURN.md)
+- [Render + free Redis/Key Value](./docs/RENDER.md)
 
 ## Scripts
 

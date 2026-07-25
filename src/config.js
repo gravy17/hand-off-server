@@ -67,6 +67,8 @@ function loadConfig(env = process.env) {
     turnSharedSecret,
     turnUrls,
     turnTtlSeconds: parsePositiveInt(env.TURN_TTL_SECONDS, 300),
+    // Render Key Value (free Redis-compatible) internal URL, e.g. redis://red-xxxxx:6379
+    redisUrl: env.REDIS_URL || '',
   };
 }
 

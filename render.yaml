@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: hand-off-signaling
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ROOM_TOKEN_SECRET
+        sync: false
+      - key: MINT_SECRET
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: hand-off-kv
+          property: connectionString
+
+  - type: keyvalue
+    name: hand-off-kv
+    plan: free
+    ipAllowList: []
+    maxmemoryPolicy: allkeys-lru

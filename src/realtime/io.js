@@ -7,14 +7,24 @@ const {
   createInviteRateLimiter,
   createConnectionGuard,
 } = require('../security/rateLimit');
-const { createPresenceStore } = require('./presence');
-const { createCallRegistry } = require('./calls');
+const { createPresenceStore, createRedisPresenceStore } = require('./presence');
+const { createCallRegistry, createRedisCallRegistry } = require('./calls');
+const { connectRedis } = require('./redisClients');
 const { attachRoomHandlers } = require('./rooms');
 const { attachSignalingHandlers } = require('./signaling');
 
-function createSocketServer(httpServer, config, logger) {
-  const presence = createPresenceStore();
-  const calls = createCallRegistry();
+async function createSocketServer(httpServer, config, logger) {
+  let redis = null;
+  let presence = createPresenceStore();
+  let calls = createCallRegistry();
+
+  if (config.redisUrl) {
+    redis = await connectRedis(config.redisUrl, logger);
+    presence = createRedisPresenceStore(redis.dataClient);
+    calls = createRedisCallRegistry(redis.dataClient);
+    logger.info('redis connected for socket adapter and shared state');
+  }
+
   const rateLimiter = createEventRateLimiter({
     limitPerSec: config.rateLimitEventsPerSec,
   });
@@ -51,6 +61,10 @@ function createSocketServer(httpServer, config, logger) {
     },
   });
 
+  if (redis) {
+    io.adapter(redis.adapter);
+  }
+
   io.use((socket, next) => {
     try {
       // Rate-limit and cap checks run before auth so failed handshakes still count.
@@ -75,34 +89,50 @@ function createSocketServer(httpServer, config, logger) {
   });
 
   io.on('connection', (socket) => {
-    try {
-      connectionGuard.track(socket);
-      attachRoomHandlers({ io, socket, presence, calls, config, logger });
-      attachSignalingHandlers({
-        socket,
-        presence,
-        calls,
-        config,
-        rateLimiter,
-        inviteRateLimiter,
-        logger,
+    connectionGuard.track(socket);
+
+    Promise.resolve()
+      .then(() => attachRoomHandlers({ io, socket, presence, calls, config, logger }))
+      .then(() => {
+        attachSignalingHandlers({
+          socket,
+          presence,
+          calls,
+          config,
+          rateLimiter,
+          inviteRateLimiter,
+          logger,
+        });
+      })
+      .catch((err) => {
+        logger.warn('connection rejected after auth', {
+          socketId: socket.id,
+          roomId: socket.data.roomId,
+          userId: socket.data.userId,
+          err,
+        });
+        socket.emit('error:client', {
+          code: err.data?.content || 'CONNECT_REJECTED',
+          message: err.message,
+        });
+        socket.disconnect(true);
       });
-    } catch (err) {
-      logger.warn('connection rejected after auth', {
-        socketId: socket.id,
-        roomId: socket.data.roomId,
-        userId: socket.data.userId,
-        err,
-      });
-      socket.emit('error:client', {
-        code: err.data?.content || 'CONNECT_REJECTED',
-        message: err.message,
-      });
-      socket.disconnect(true);
-    }
   });
 
-  return { io, presence, calls };
+  async function closeRedis() {
+    if (redis) {
+      await redis.close();
+    }
+  }
+
+  return {
+    io,
+    presence,
+    calls,
+    redis,
+    pingRedis: redis ? () => redis.ping() : async () => true,
+    closeRedis,
+  };
 }
 
 function extractBearer(header) {

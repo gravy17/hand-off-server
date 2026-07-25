@@ -26,41 +26,41 @@ function attachSignalingHandlers({
         }
         return;
       }
-      try {
-        handler(payload, ack);
-      } catch (err) {
-        const code = err.code || 'ERROR';
-        emitError(socket, code, err.message);
-        if (typeof ack === 'function') {
-          ack({ ok: false, code, message: err.message });
-        }
-        if (
-          code !== 'VALIDATION' &&
-          code !== 'PEER_NOT_FOUND' &&
-          code !== 'RATE_LIMIT' &&
-          code !== 'CALL_BUSY' &&
-          code !== 'CALL_NOT_FOUND' &&
-          code !== 'CALL_STATE' &&
-          code !== 'INVITE_RATE_LIMIT'
-        ) {
-          logger.warn('signaling handler error', {
-            socketId: socket.id,
-            roomId,
-            err,
-          });
-        }
-      }
+      Promise.resolve()
+        .then(() => handler(payload, ack))
+        .catch((err) => {
+          const code = err.code || 'ERROR';
+          emitError(socket, code, err.message);
+          if (typeof ack === 'function') {
+            ack({ ok: false, code, message: err.message });
+          }
+          if (
+            code !== 'VALIDATION' &&
+            code !== 'PEER_NOT_FOUND' &&
+            code !== 'RATE_LIMIT' &&
+            code !== 'CALL_BUSY' &&
+            code !== 'CALL_NOT_FOUND' &&
+            code !== 'CALL_STATE' &&
+            code !== 'INVITE_RATE_LIMIT'
+          ) {
+            logger.warn('signaling handler error', {
+              socketId: socket.id,
+              roomId,
+              err,
+            });
+          }
+        });
     };
   }
 
-  function resolvePeer(toUserId) {
+  async function resolvePeer(toUserId) {
     if (toUserId === socket.data.userId) {
       const err = new Error('cannot signal yourself');
       err.code = 'VALIDATION';
       throw err;
     }
 
-    const peer = presence.findByUserId(roomId, toUserId);
+    const peer = await presence.findByUserId(roomId, toUserId);
     if (!peer) {
       const err = new Error('peer not in room');
       err.code = 'PEER_NOT_FOUND';
@@ -94,15 +94,15 @@ function attachSignalingHandlers({
 
   socket.on(
     'call:invite',
-    withRateLimit((payload, ack) => {
+    withRateLimit(async (payload, ack) => {
       if (!inviteRateLimiter(socket.data.userId)) {
         const err = new Error('invite rate limit exceeded');
         err.code = 'INVITE_RATE_LIMIT';
         throw err;
       }
       const { toUserId, signal } = parseTargetedSignal(payload, config.maxPayloadBytes);
-      const peer = resolvePeer(toUserId);
-      calls.beginInvite({
+      const peer = await resolvePeer(toUserId);
+      await calls.beginInvite({
         roomId,
         fromUserId: socket.data.userId,
         toUserId,
@@ -118,10 +118,10 @@ function attachSignalingHandlers({
 
   socket.on(
     'call:accept',
-    withRateLimit((payload, ack) => {
+    withRateLimit(async (payload, ack) => {
       const { toUserId, signal } = parseTargetedSignal(payload, config.maxPayloadBytes);
-      const peer = resolvePeer(toUserId);
-      calls.accept({
+      const peer = await resolvePeer(toUserId);
+      await calls.accept({
         roomId,
         fromUserId: socket.data.userId,
         toUserId,
@@ -136,12 +136,12 @@ function attachSignalingHandlers({
 
   socket.on(
     'call:reject',
-    withRateLimit((payload, ack) => {
+    withRateLimit(async (payload, ack) => {
       const { toUserId } = parseTargetedSignal(payload, config.maxPayloadBytes, {
         requireSignal: false,
       });
-      const peer = resolvePeer(toUserId);
-      calls.rejectOrEnd({
+      const peer = await resolvePeer(toUserId);
+      await calls.rejectOrEnd({
         roomId,
         fromUserId: socket.data.userId,
         toUserId,
@@ -155,12 +155,12 @@ function attachSignalingHandlers({
 
   socket.on(
     'call:end',
-    withRateLimit((payload, ack) => {
+    withRateLimit(async (payload, ack) => {
       const { toUserId } = parseTargetedSignal(payload, config.maxPayloadBytes, {
         requireSignal: false,
       });
-      const peer = resolvePeer(toUserId);
-      calls.rejectOrEnd({
+      const peer = await resolvePeer(toUserId);
+      await calls.rejectOrEnd({
         roomId,
         fromUserId: socket.data.userId,
         toUserId,
@@ -174,10 +174,10 @@ function attachSignalingHandlers({
 
   socket.on(
     'signal:ice',
-    withRateLimit((payload, ack) => {
+    withRateLimit(async (payload, ack) => {
       const { toUserId, candidate } = parseIce(payload, config.maxPayloadBytes);
-      const peer = resolvePeer(toUserId);
-      calls.assertCanSignal({
+      const peer = await resolvePeer(toUserId);
+      await calls.assertCanSignal({
         roomId,
         fromUserId: socket.data.userId,
         toUserId,
@@ -191,17 +191,26 @@ function attachSignalingHandlers({
   );
 
   socket.on('disconnect', () => {
-    const cleared = calls.clearUser(socket.data.userId);
-    if (!cleared) {
-      return;
-    }
-    const peer = presence.findByUserId(roomId, cleared.peerUserId);
-    if (peer) {
-      socket.to(peer.socketId).emit('call:ended', {
-        fromUserId: socket.data.userId,
-        reason: 'disconnect',
+    (async () => {
+      const cleared = await calls.clearUser(socket.data.userId);
+      if (!cleared) {
+        return;
+      }
+      const peer = await presence.findByUserId(roomId, cleared.peerUserId);
+      if (peer) {
+        socket.to(peer.socketId).emit('call:ended', {
+          fromUserId: socket.data.userId,
+          reason: 'disconnect',
+        });
+      }
+    })().catch((err) => {
+      logger.error('call cleanup failed', {
+        err,
+        socketId: socket.id,
+        roomId,
+        userId: socket.data.userId,
       });
-    }
+    });
   });
 }
 

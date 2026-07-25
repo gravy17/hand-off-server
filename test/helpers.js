@@ -37,6 +37,7 @@ function baseConfig(overrides = {}) {
     turnSharedSecret: overrides.turnSharedSecret || '',
     turnUrls: overrides.turnUrls || [],
     turnTtlSeconds: overrides.turnTtlSeconds || 300,
+    redisUrl: overrides.redisUrl || '',
     ...overrides,
   };
 }
@@ -49,13 +50,17 @@ async function startTestServer(overrides = {}) {
   config.turnEnabled = Boolean(config.turnSharedSecret && config.turnUrls.length > 0);
 
   let ready = false;
+  let pingRedis = async () => true;
   const app = createHttpApp({
     config,
     getReady: () => ready,
+    getRedisReady: () => pingRedis(),
     logger,
   });
   const server = http.createServer(app);
-  const { io, presence, calls } = createSocketServer(server, config, logger);
+  const socket = await createSocketServer(server, config, logger);
+  const { io, presence, calls, closeRedis } = socket;
+  pingRedis = socket.pingRedis;
   const url = await listen(server);
   ready = true;
 
@@ -75,6 +80,7 @@ async function startTestServer(overrides = {}) {
     await new Promise((resolve) => {
       io.close(() => resolve());
     });
+    await closeRedis();
     if (server.listening) {
       await new Promise((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));
