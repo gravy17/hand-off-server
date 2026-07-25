@@ -96,18 +96,19 @@ test('cross-room call invite does not deliver', async () => {
 test('oversized signal is rejected', async () => {
   const server = await startTestServer({ maxPayloadBytes: 64 });
   const { a, b } = await connectPair(server);
-
-  const errPromise = waitFor(a, 'error:client');
-  a.emit('call:invite', {
-    toUserId: 'bob',
-    signal: { type: 'offer', sdp: 'x'.repeat(500) },
-  });
-  const err = await errPromise;
-  assert.equal(err.code, 'VALIDATION');
-
-  a.close();
-  b.close();
-  await server.close();
+  try {
+    const errPromise = waitFor(a, 'error:client');
+    a.emit('call:invite', {
+      toUserId: 'bob',
+      signal: { type: 'offer', sdp: 'x'.repeat(500) },
+    });
+    const err = await errPromise;
+    assert.equal(err.code, 'VALIDATION');
+  } finally {
+    a.close();
+    b.close();
+    await server.close();
+  }
 });
 
 test('accept and ice relay to peer', async () => {

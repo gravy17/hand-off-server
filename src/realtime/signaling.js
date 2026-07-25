@@ -26,7 +26,7 @@ function attachSignalingHandlers({ socket, presence, config, rateLimiter, logger
         if (typeof ack === 'function') {
           ack({ ok: false, code, message: err.message });
         }
-        if (code !== 'VALIDATION') {
+        if (code !== 'VALIDATION' && code !== 'PEER_NOT_FOUND' && code !== 'RATE_LIMIT') {
           logger.warn('signaling handler error', {
             socketId: socket.id,
             roomId,

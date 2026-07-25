@@ -14,7 +14,9 @@ function createSocketServer(httpServer, config, logger) {
   });
 
   const io = new Server(httpServer, {
-    maxHttpBufferSize: config.maxPayloadBytes,
+    // Keep the transport buffer comfortably above app-level signal limits so
+    // handshake/control packets are not rejected when MAX_PAYLOAD_BYTES is tight.
+    maxHttpBufferSize: Math.max(config.maxPayloadBytes, 1_000_000),
     cors: {
       origin(origin, callback) {
         // Non-browser clients may omit Origin.

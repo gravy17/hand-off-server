@@ -56,10 +56,15 @@ async function startTestServer(overrides = {}) {
 
   async function close() {
     ready = false;
-    await new Promise((resolve) => io.close(resolve));
-    await new Promise((resolve, reject) => {
-      server.close((err) => (err ? reject(err) : resolve()));
+    await new Promise((resolve) => {
+      io.close(() => resolve());
     });
+    // Socket.IO may already have closed the HTTP server.
+    if (server.listening) {
+      await new Promise((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
+    }
   }
 
   return { url, config, io, presence, tokenFor, close };

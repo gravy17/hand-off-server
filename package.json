@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "test": "node --test test/**/*.test.js",
+    "test": "node --test test/auth.test.js test/rooms.test.js test/signaling.test.js",
     "mint-token": "node scripts/mint-token.js"
   },
   "dependencies": {

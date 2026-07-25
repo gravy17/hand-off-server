@@ -38,6 +38,10 @@ function startServer(env = process.env) {
     forceTimer.unref();
 
     io.close(() => {
+      if (!server.listening) {
+        process.exit(0);
+        return;
+      }
       server.close((err) => {
         if (err) {
           logger.error('error during http close', { err });
