@@ -24,5 +24,4 @@ services:
   - type: keyvalue
     name: hand-off-kv
     plan: free
-    ipAllowList: []
     maxmemoryPolicy: allkeys-lru

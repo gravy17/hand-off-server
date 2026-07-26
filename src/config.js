@@ -57,7 +57,9 @@ function loadConfig(env = process.env) {
     mintSecret,
     allowedOrigins,
     maxRoomSize: parsePositiveInt(env.MAX_ROOM_SIZE, 8),
-    maxPayloadBytes: parsePositiveInt(env.MAX_PAYLOAD_BYTES, 16384),
+    // 64 KiB default leaves headroom for heavy browser SDPs in mesh rooms.
+    maxPayloadBytes: parsePositiveInt(env.MAX_PAYLOAD_BYTES, 65536),
+    maxChatChars: parsePositiveInt(env.MAX_CHAT_CHARS, 1000),
     tokenTtlSeconds: parsePositiveInt(env.TOKEN_TTL_SECONDS, 900),
     rateLimitEventsPerSec: parsePositiveInt(env.RATE_LIMIT_EVENTS_PER_SEC, 20),
     rateLimitInvitesPerMin: parsePositiveInt(env.RATE_LIMIT_INVITES_PER_MIN, 10),
