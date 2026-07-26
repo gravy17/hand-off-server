@@ -15,8 +15,8 @@ async function attachRoomHandlers({ io, socket, presence, calls, config, logger 
     io.in(existing.socketId).disconnectSockets(true);
     await presence.removeMember(roomId, existing.socketId);
     const cleared = await calls.clearUser(userId);
-    if (cleared) {
-      const peer = await presence.findByUserId(roomId, cleared.peerUserId);
+    for (const call of cleared) {
+      const peer = await presence.findByUserId(roomId, call.peerUserId);
       if (peer) {
         io.to(peer.socketId).emit('call:ended', {
           fromUserId: userId,

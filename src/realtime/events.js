@@ -6,6 +6,8 @@ const ALLOWED_CLIENT_EVENTS = new Set([
   'call:reject',
   'call:end',
   'signal:ice',
+  'signal:sdp',
+  'room:chat',
 ]);
 
 const LEGACY_CLIENT_EVENTS = new Set([
@@ -89,9 +91,38 @@ function parseIce(payload, maxPayloadBytes) {
   };
 }
 
+function parseChat(payload, { maxChatChars }) {
+  if (!isObject(payload)) {
+    const err = new Error('payload must be an object');
+    err.code = 'VALIDATION';
+    throw err;
+  }
+
+  if (typeof payload.text !== 'string') {
+    const err = new Error('text must be a string');
+    err.code = 'VALIDATION';
+    throw err;
+  }
+
+  const text = payload.text.trim();
+  if (!text) {
+    const err = new Error('text must be non-empty');
+    err.code = 'VALIDATION';
+    throw err;
+  }
+  if (text.length > maxChatChars) {
+    const err = new Error(`text exceeds ${maxChatChars} characters`);
+    err.code = 'VALIDATION';
+    throw err;
+  }
+
+  return { text };
+}
+
 module.exports = {
   ALLOWED_CLIENT_EVENTS,
   LEGACY_CLIENT_EVENTS,
   parseTargetedSignal,
   parseIce,
+  parseChat,
 };

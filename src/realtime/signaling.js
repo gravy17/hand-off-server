@@ -1,6 +1,12 @@
 'use strict';
 
-const { parseTargetedSignal, parseIce, ALLOWED_CLIENT_EVENTS, LEGACY_CLIENT_EVENTS } = require('./events');
+const {
+  parseTargetedSignal,
+  parseIce,
+  parseChat,
+  ALLOWED_CLIENT_EVENTS,
+  LEGACY_CLIENT_EVENTS,
+} = require('./events');
 
 function emitError(socket, code, message) {
   socket.emit('error:client', { code, message });
@@ -87,7 +93,11 @@ function attachSignalingHandlers({
       );
       return;
     }
-    if (eventName.startsWith('call:') || eventName.startsWith('signal:')) {
+    if (
+      eventName.startsWith('call:') ||
+      eventName.startsWith('signal:') ||
+      eventName.startsWith('room:')
+    ) {
       emitError(socket, 'UNKNOWN_EVENT', `unknown event "${eventName}"`);
     }
   });
@@ -190,18 +200,56 @@ function attachSignalingHandlers({
     })
   );
 
+  // Mid-call SDP renegotiation (when replaceTrack is not enough).
+  socket.on(
+    'signal:sdp',
+    withRateLimit(async (payload, ack) => {
+      const { toUserId, signal } = parseTargetedSignal(payload, config.maxPayloadBytes);
+      const peer = await resolvePeer(toUserId);
+      await calls.assertCanSignal({
+        roomId,
+        fromUserId: socket.data.userId,
+        toUserId,
+        requireActive: true,
+      });
+      socket.to(peer.socketId).emit('signal:sdp', {
+        fromUserId: socket.data.userId,
+        signal,
+      });
+      ok(ack);
+    })
+  );
+
+  // Optional room chat before a WebRTC data channel exists.
+  socket.on(
+    'room:chat',
+    withRateLimit(async (payload, ack) => {
+      const { text } = parseChat(payload, { maxChatChars: config.maxChatChars });
+      const message = {
+        roomId,
+        fromUserId: socket.data.userId,
+        fromName: socket.data.name,
+        text,
+        at: Date.now(),
+      };
+      // Include sender so UIs can render a single stream.
+      socket.to(roomId).emit('room:chat', message);
+      socket.emit('room:chat', message);
+      ok(ack, { at: message.at });
+    })
+  );
+
   socket.on('disconnect', () => {
     (async () => {
       const cleared = await calls.clearUser(socket.data.userId);
-      if (!cleared) {
-        return;
-      }
-      const peer = await presence.findByUserId(roomId, cleared.peerUserId);
-      if (peer) {
-        socket.to(peer.socketId).emit('call:ended', {
-          fromUserId: socket.data.userId,
-          reason: 'disconnect',
-        });
+      for (const call of cleared) {
+        const peer = await presence.findByUserId(roomId, call.peerUserId);
+        if (peer) {
+          socket.to(peer.socketId).emit('call:ended', {
+            fromUserId: socket.data.userId,
+            reason: 'disconnect',
+          });
+        }
       }
     })().catch((err) => {
       logger.error('call cleanup failed', {

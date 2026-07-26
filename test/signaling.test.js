@@ -148,7 +148,7 @@ test('accept and ice relay require invite first', async () => {
   }
 });
 
-test('second invite while busy is rejected', async () => {
+test('mesh: concurrent invites to different peers are allowed', async () => {
   const server = await startTestServer();
   const a = connectClient(
     server.url,
@@ -169,18 +169,66 @@ test('second invite while busy is rejected', async () => {
   ]);
 
   try {
-    await new Promise((resolve) => {
-      a.emit('call:invite', { toUserId: 'bob', signal: { type: 'offer', sdp: '1' } }, resolve);
-    });
-
-    const errPromise = waitFor(a, 'error:client');
+    const toBob = waitFor(b, 'call:incoming');
+    const toCarol = waitFor(c, 'call:incoming');
+    a.emit('call:invite', { toUserId: 'bob', signal: { type: 'offer', sdp: '1' } });
     a.emit('call:invite', { toUserId: 'carol', signal: { type: 'offer', sdp: '2' } });
-    const err = await errPromise;
+    await Promise.all([toBob, toCarol]);
+
+    const busy = waitFor(a, 'error:client');
+    a.emit('call:invite', { toUserId: 'bob', signal: { type: 'offer', sdp: '3' } });
+    const err = await busy;
     assert.equal(err.code, 'CALL_BUSY');
   } finally {
     a.close();
     b.close();
     c.close();
+    await server.close();
+  }
+});
+
+test('mid-call signal:sdp requires active call', async () => {
+  const server = await startTestServer();
+  const { a, b } = await connectPair(server);
+  try {
+    const incoming = waitFor(b, 'call:incoming');
+    a.emit('call:invite', { toUserId: 'bob', signal: { type: 'offer', sdp: 'v=0' } });
+    await incoming;
+
+    const tooEarly = waitFor(a, 'error:client');
+    a.emit('signal:sdp', { toUserId: 'bob', signal: { type: 'offer', sdp: 'reneg' } });
+    assert.equal((await tooEarly).code, 'CALL_STATE');
+
+    const accepted = waitFor(a, 'call:accepted');
+    b.emit('call:accept', { toUserId: 'alice', signal: { type: 'answer', sdp: 'v=0' } });
+    await accepted;
+
+    const sdpPromise = waitFor(b, 'signal:sdp');
+    a.emit('signal:sdp', { toUserId: 'bob', signal: { type: 'offer', sdp: 'reneg-ok' } });
+    const sdp = await sdpPromise;
+    assert.equal(sdp.fromUserId, 'alice');
+    assert.equal(sdp.signal.sdp, 'reneg-ok');
+  } finally {
+    a.close();
+    b.close();
+    await server.close();
+  }
+});
+
+test('room:chat relays to room members', async () => {
+  const server = await startTestServer();
+  const { a, b } = await connectPair(server);
+  try {
+    const fromA = waitFor(a, 'room:chat');
+    const fromB = waitFor(b, 'room:chat');
+    a.emit('room:chat', { text: 'hello mesh' });
+    const [msgA, msgB] = await Promise.all([fromA, fromB]);
+    assert.equal(msgA.text, 'hello mesh');
+    assert.equal(msgB.fromUserId, 'alice');
+    assert.equal(msgB.fromName, 'Alice');
+  } finally {
+    a.close();
+    b.close();
     await server.close();
   }
 });

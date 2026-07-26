@@ -11,7 +11,8 @@ This is **not** a TURN/media server. Signaling lives here; NAT traversal is hand
 - JWT auth on the Socket.IO handshake
 - Room isolation from token `roomId`
 - Server-authoritative presence (session takeover per user)
-- Call state machine: invite → ringing → accept/reject/end (+ disconnect cleanup)
+- Multi-peer mesh call state: concurrent 1:1 links per user (busy only per peer pair)
+- Mid-call SDP renegotiation (`signal:sdp`) + optional room chat (`room:chat`)
 - Allowlisted events only; legacy events rejected with `LEGACY_EVENT`
 - Helmet, CORS allowlist, payload limits, per-socket/invite/IP abuse controls
 - Optional coturn REST credential endpoint
@@ -42,7 +43,8 @@ npm run mint-token -- --userId=user-123 --roomId=room-abc --name=Ada
 | `MINT_SECRET` | no | room secret in dev | Protects token mint helper |
 | `ALLOWED_ORIGINS` | production | none | Comma-separated browser origins |
 | `MAX_ROOM_SIZE` | no | `8` | Max sockets per room |
-| `MAX_PAYLOAD_BYTES` | no | `16384` | Max signal/candidate JSON size |
+| `MAX_PAYLOAD_BYTES` | no | `65536` | Max signal/candidate JSON size |
+| `MAX_CHAT_CHARS` | no | `1000` | Max `room:chat` text length |
 | `TOKEN_TTL_SECONDS` | no | `900` | Default mint TTL |
 | `RATE_LIMIT_EVENTS_PER_SEC` | no | `20` | Per-socket signaling budget |
 | `RATE_LIMIT_INVITES_PER_MIN` | no | `10` | Per-user invite budget |
@@ -74,6 +76,8 @@ io(url, { auth: { token } })
 - `call:rejected` `{ fromUserId }`
 - `call:ended` `{ fromUserId, reason? }`
 - `signal:ice` `{ fromUserId, candidate }`
+- `signal:sdp` `{ fromUserId, signal }` (mid-call renegotiation)
+- `room:chat` `{ roomId, fromUserId, fromName, text, at }`
 - `error:client` `{ code, message }`
 
 ### Client → server
@@ -83,13 +87,16 @@ io(url, { auth: { token } })
 - `call:reject` `{ toUserId }`
 - `call:end` `{ toUserId }`
 - `signal:ice` `{ toUserId, candidate }`
+- `signal:sdp` `{ toUserId, signal }` (active calls only)
+- `room:chat` `{ text }`
 
 Rules:
 
 - `fromUserId` is always taken from the verified token
-- One ringing/active call per user
+- A user may have many concurrent peer links (mesh); `CALL_BUSY` only for the same peer pair
 - Only the callee may `call:accept`
-- ICE is only relayed for an existing ringing/active call
+- ICE is relayed for ringing/active pairs; `signal:sdp` requires an **active** pair
+- `room:chat` is room-scoped and rate-limited (not a free-form action bus)
 
 ## HTTP API
 

@@ -34,10 +34,10 @@ socket.on('room:joined', ({ roomId, self, members }) => { /* ... */ });
 socket.on('presence:update', ({ members }) => { /* ... */ });
 ```
 
-3. Use the call state machine:
+3. Use the call state machine (mesh-friendly — invite each peer independently):
 
 ```js
-// caller
+// caller (may invite bob and carol at the same time)
 socket.emit('call:invite', { toUserId, signal: offer });
 
 // callee
@@ -48,7 +48,16 @@ socket.on('call:incoming', async ({ fromUserId, signal }) => {
 
 socket.on('call:accepted', ({ signal }) => { /* set remote answer */ });
 socket.emit('signal:ice', { toUserId, candidate });
+
+// mid-call renegotiation when replaceTrack is not enough
+socket.emit('signal:sdp', { toUserId, signal: renegOffer });
+socket.on('signal:sdp', ({ fromUserId, signal }) => { /* apply remote SDP */ });
+
 socket.emit('call:end', { toUserId });
+
+// optional pre-datachannel room chat
+socket.emit('room:chat', { text: 'hello' });
+socket.on('room:chat', ({ fromName, text }) => { /* ... */ });
 ```
 
 4. For NAT traversal, fetch ephemeral TURN creds (if configured):
